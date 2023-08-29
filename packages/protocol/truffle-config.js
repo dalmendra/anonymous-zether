@@ -1,25 +1,23 @@
 module.exports = {
-    // See <http://truffleframework.com/docs/advanced/configuration>
-    // for more about customizing your Truffle configuration!
     networks: {
-        develop: {
+        development: {
             host: "127.0.0.1",
-            port: 9545,
-            gas: 470000000,
-            network_id: "*" // Match any network id
-        },
-        quorum: {
-            host: "127.0.0.1",
-            port: 22000,
+            port: 8545, // ganache
             gasPrice: 0,
-            gas: 470000000,
             network_id: "*", // Match any network id
-            type: "quorum"
+            websockets: true,
+        },
+        qex: {
+            host: "127.0.0.1",
+            port: 22000, // node1 in quorum examples
+            gasPrice: 0,
+            network_id: "*",
+            websockets: true,
         }
     },
     compilers: {
         solc: {
-            version: "0.5.4",
+            version: "0.7.0",
         }
     }
 };

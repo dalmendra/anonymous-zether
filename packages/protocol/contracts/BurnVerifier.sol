@@ -1,76 +1,55 @@
-pragma solidity 0.5.4;
+// SPDX-License-Identifier: Apache License 2.0
+pragma solidity ^0.7.0;
 pragma experimental ABIEncoderV2;
 
 import "./Utils.sol";
+import "./InnerProductVerifier.sol";
 
 contract BurnVerifier {
     using Utils for uint256;
+    using Utils for Utils.G1Point;
 
-    uint256 constant m = 32;
-    uint256 constant n = 5;
-    uint256 constant FIELD_ORDER = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
-
-    G1Point[m] gs;
-    G1Point[m] hs;
-    G1Point g;
-    G1Point h;
-
-    uint256[m] twos = powers(2); // how much is this actually used?
+    InnerProductVerifier ip;
 
     struct BurnStatement {
-        G1Point balanceCommitNewL;
-        G1Point balanceCommitNewR;
-        G1Point y;
-        uint256 bTransfer;
+        Utils.G1Point CLn;
+        Utils.G1Point CRn;
+        Utils.G1Point y;
         uint256 epoch; // or uint8?
         address sender;
-        G1Point u;
+        Utils.G1Point u;
     }
 
     struct BurnProof {
-        G1Point A;
-        G1Point S;
-        G1Point XL;
-        G1Point XR;
-        G1Point[2] commits;
-        uint256 tauX;
+        Utils.G1Point BA;
+        Utils.G1Point BS;
+
+        Utils.G1Point T_1;
+        Utils.G1Point T_2;
+        uint256 tHat;
         uint256 mu;
-        uint256 t;
-        SigmaProof sigmaProof;
-        InnerProductProof ipProof;
-    }
 
-    struct SigmaProof {
         uint256 c;
-        uint256 sX;
+        uint256 s_sk;
+        uint256 s_b;
+        uint256 s_tau;
+
+        InnerProductVerifier.InnerProductProof ipProof;
     }
 
-    struct InnerProductProof {
-        G1Point[n] ls;
-        G1Point[n] rs;
-        uint256 a;
-        uint256 b;
+    constructor(address _ip) {
+        ip = InnerProductVerifier(_ip);
     }
 
-    constructor() public {
-        g = mapInto("G");
-        h = mapInto("V");
-        for (uint256 i = 0; i < m; i++) {
-            gs[i] = mapInto("G", i);
-            hs[i] = mapInto("H", i);
-        }
-    } // will it be more expensive later on to sload these than to recompute them?
-
-    function verifyBurn(bytes32[2] memory CLn, bytes32[2] memory CRn, bytes32[2] memory y, uint256 bTransfer, uint256 epoch, bytes32[2] memory u, address sender, bytes memory proof) view public returns (bool) {
+    function verifyBurn(Utils.G1Point memory CLn, Utils.G1Point memory CRn, Utils.G1Point memory y, uint256 epoch, Utils.G1Point memory u, address sender, bytes memory proof) public view returns (bool) {
         BurnStatement memory statement; // WARNING: if this is called directly in the console,
         // and your strings are less than 64 characters, they will be padded on the right, not the left. should hopefully not be an issue,
         // as this will typically be called simply by the other contract. still though, beware
-        statement.balanceCommitNewL = G1Point(uint256(CLn[0]), uint256(CLn[1]));
-        statement.balanceCommitNewR = G1Point(uint256(CRn[0]), uint256(CRn[1]));
-        statement.y = G1Point(uint256(y[0]), uint256(y[1]));
-        statement.bTransfer = bTransfer;
+        statement.CLn = CLn;
+        statement.CRn = CRn;
+        statement.y = y;
         statement.epoch = epoch;
-        statement.u = G1Point(uint256(u[0]), uint256(u[1]));
+        statement.u = u;
         statement.sender = sender;
         BurnProof memory burnProof = unserialize(proof);
         return verify(statement, burnProof);
@@ -78,261 +57,112 @@ contract BurnVerifier {
 
     struct BurnAuxiliaries {
         uint256 y;
-        uint256[m] ys;
+        uint256[32] ys;
         uint256 z;
-        uint256[2] zs; // [z^2, z^3]
-        uint256[m] twoTimesZSquared;
-        uint256 k;
-        G1Point tEval;
-        uint256 t;
+        uint256[1] zs; // silly. just to match zether.
+        uint256 zSum;
+        uint256[32] twoTimesZSquared;
         uint256 x;
+        uint256 t;
+        uint256 k;
+        Utils.G1Point tEval;
     }
 
     struct SigmaAuxiliaries {
-        uint256 minusC;
-        G1Point Ay;
-        G1Point gEpoch;
-        G1Point Au;
-        G1Point cCommit;
-        G1Point At;
+        uint256 c;
+        Utils.G1Point A_y;
+        Utils.G1Point A_b;
+        Utils.G1Point A_t;
+        Utils.G1Point gEpoch;
+        Utils.G1Point A_u;
     }
 
-    function verify(BurnStatement memory statement, BurnProof memory proof) view internal returns (bool) {
+    struct IPAuxiliaries {
+        Utils.G1Point P;
+        Utils.G1Point u_x;
+        Utils.G1Point[] hPrimes;
+        Utils.G1Point hPrimeSum;
+        uint256 o;
+    }
+
+    function gSum() internal pure returns (Utils.G1Point memory) {
+        return Utils.G1Point(0x2257118d30fe5064dda298b2fac15cf96fd51f0e7e3df342d0aed40b8d7bb151, 0x0d4250e7509c99370e6b15ebfe4f1aa5e65a691133357901aa4b0641f96c80a8);
+    }
+
+    function verify(BurnStatement memory statement, BurnProof memory proof) internal view returns (bool) {
+        uint256 statementHash = uint256(keccak256(abi.encode(statement.CLn, statement.CRn, statement.y, statement.epoch, statement.sender))).mod(); // stacktoodeep?
+
         BurnAuxiliaries memory burnAuxiliaries;
-        burnAuxiliaries.y = uint256(keccak256(abi.encode(uint256(keccak256(abi.encode(statement.balanceCommitNewL, statement.balanceCommitNewR, statement.y, statement.bTransfer, statement.epoch))).mod(), proof.A, proof.S, proof.XL, proof.XR))).mod();
-        burnAuxiliaries.ys = powers(burnAuxiliaries.y);
+        burnAuxiliaries.y = uint256(keccak256(abi.encode(statementHash, proof.BA, proof.BS))).mod();
+        burnAuxiliaries.ys[0] = 1;
+        burnAuxiliaries.k = 1;
+        for (uint256 i = 1; i < 32; i++) {
+            burnAuxiliaries.ys[i] = burnAuxiliaries.ys[i - 1].mul(burnAuxiliaries.y);
+            burnAuxiliaries.k = burnAuxiliaries.k.add(burnAuxiliaries.ys[i]);
+        }
         burnAuxiliaries.z = uint256(keccak256(abi.encode(burnAuxiliaries.y))).mod();
         burnAuxiliaries.zs[0] = burnAuxiliaries.z.mul(burnAuxiliaries.z);
-        for (uint256 i = 1; i < 2; i++) { // silly
-            burnAuxiliaries.zs[i] = burnAuxiliaries.zs[i - 1].mul(burnAuxiliaries.z);
+        burnAuxiliaries.zSum = burnAuxiliaries.zs[0].mul(burnAuxiliaries.z); // trivial sum
+        burnAuxiliaries.k = burnAuxiliaries.k.mul(burnAuxiliaries.z.sub(burnAuxiliaries.zs[0])).sub(burnAuxiliaries.zSum.mul(1 << 32).sub(burnAuxiliaries.zSum));
+        burnAuxiliaries.t = proof.tHat.sub(burnAuxiliaries.k);
+        for (uint256 i = 0; i < 32; i++) {
+            burnAuxiliaries.twoTimesZSquared[i] = burnAuxiliaries.zs[0].mul(1 << i);
         }
-        burnAuxiliaries.twoTimesZSquared = times(twos, burnAuxiliaries.zs[0]);
-        burnAuxiliaries.x = uint256(keccak256(abi.encode(burnAuxiliaries.z, proof.commits))).mod();
 
-        // begin verification of sigma proof. is it worth passing to a different method?
-        burnAuxiliaries.k = sumScalars(burnAuxiliaries.ys).mul(burnAuxiliaries.z.sub(burnAuxiliaries.zs[0])).sub(burnAuxiliaries.zs[1].mul(2 ** m).sub(burnAuxiliaries.zs[1])); // really care about t - k
-        burnAuxiliaries.tEval = add(mul(proof.commits[0], burnAuxiliaries.x), mul(proof.commits[1], burnAuxiliaries.x.mul(burnAuxiliaries.x))); // replace with "commit"?
-        burnAuxiliaries.t = proof.t.sub(burnAuxiliaries.k);
+        burnAuxiliaries.x = uint256(keccak256(abi.encode(burnAuxiliaries.z, proof.T_1, proof.T_2))).mod();
+        burnAuxiliaries.tEval = proof.T_1.mul(burnAuxiliaries.x).add(proof.T_2.mul(burnAuxiliaries.x.mul(burnAuxiliaries.x))); // replace with "commit"?
 
         SigmaAuxiliaries memory sigmaAuxiliaries;
-        sigmaAuxiliaries.minusC = proof.sigmaProof.c.neg();
-        sigmaAuxiliaries.Ay = add(mul(g, proof.sigmaProof.sX), mul(statement.y, sigmaAuxiliaries.minusC));
-        sigmaAuxiliaries.gEpoch = mapInto("Zether", statement.epoch);
-        sigmaAuxiliaries.Au = add(mul(sigmaAuxiliaries.gEpoch, proof.sigmaProof.sX), mul(statement.u, sigmaAuxiliaries.minusC));
-        sigmaAuxiliaries.cCommit = add(mul(add(mul(statement.balanceCommitNewL, proof.sigmaProof.c), mul(statement.balanceCommitNewR, proof.sigmaProof.sX.neg())), burnAuxiliaries.zs[0]), mul(add(mul(proof.XL, proof.sigmaProof.c), mul(proof.XR, proof.sigmaProof.sX.neg())), burnAuxiliaries.zs[1]));
-        sigmaAuxiliaries.At = add(add(mul(g, burnAuxiliaries.t.mul(proof.sigmaProof.c)), mul(h, proof.tauX.mul(proof.sigmaProof.c))), neg(add(sigmaAuxiliaries.cCommit, mul(burnAuxiliaries.tEval, proof.sigmaProof.c))));
+        sigmaAuxiliaries.A_y = Utils.g().mul(proof.s_sk).add(statement.y.mul(proof.c.neg()));
+        sigmaAuxiliaries.A_b = Utils.g().mul(proof.s_b).add(statement.CRn.mul(proof.s_sk).add(statement.CLn.mul(proof.c.neg())).mul(burnAuxiliaries.zs[0]));
+        sigmaAuxiliaries.A_t = Utils.g().mul(burnAuxiliaries.t).add(burnAuxiliaries.tEval.neg()).mul(proof.c).add(Utils.h().mul(proof.s_tau)).add(Utils.g().mul(proof.s_b.neg()));
+        sigmaAuxiliaries.gEpoch = Utils.mapInto("Zether", statement.epoch);
+        sigmaAuxiliaries.A_u = sigmaAuxiliaries.gEpoch.mul(proof.s_sk).add(statement.u.mul(proof.c.neg()));
 
-        uint256 challenge = uint256(keccak256(abi.encode(burnAuxiliaries.x, sigmaAuxiliaries.Ay, sigmaAuxiliaries.Au, sigmaAuxiliaries.At, statement.sender))).mod();
-        require(challenge == proof.sigmaProof.c, "Sigma protocol challenge equality failure.");
+        sigmaAuxiliaries.c = uint256(keccak256(abi.encode(burnAuxiliaries.x, sigmaAuxiliaries.A_y, sigmaAuxiliaries.A_b, sigmaAuxiliaries.A_t, sigmaAuxiliaries.A_u))).mod();
+        require(sigmaAuxiliaries.c == proof.c, "Sigma protocol challenge equality failure.");
 
-        uint256 uChallenge = uint256(keccak256(abi.encode(proof.sigmaProof.c, proof.t, proof.tauX, proof.mu))).mod();
-        G1Point memory u = mul(g, uChallenge);
-        G1Point[m] memory hPrimes = hadamardInv(hs, burnAuxiliaries.ys);
-        uint256[m] memory hExp = addVectors(times(burnAuxiliaries.ys, burnAuxiliaries.z), burnAuxiliaries.twoTimesZSquared);
-        G1Point memory P = add(add(proof.A, mul(proof.S, burnAuxiliaries.x)), mul(sumPoints(gs), burnAuxiliaries.z.neg()));
-        P = add(neg(mul(h, proof.mu)), add(P, commit(hPrimes, hExp)));
-        P = add(P, mul(u, proof.t));
-
-        // begin inner product verification
-        InnerProductProof memory ipProof = proof.ipProof;
-        uint256[n] memory challenges;
-        for (uint256 i = 0; i < n; i++) {
-            uChallenge = uint256(keccak256(abi.encode(uChallenge, ipProof.ls[i], ipProof.rs[i]))).mod();
-            challenges[i] = uChallenge;
-            uint256 xInv = uChallenge.inv();
-            P = add(add(mul(ipProof.ls[i], uChallenge.exp(2)), mul(ipProof.rs[i], xInv.exp(2))), P);
+        IPAuxiliaries memory ipAuxiliaries;
+        ipAuxiliaries.o = uint256(keccak256(abi.encode(sigmaAuxiliaries.c))).mod();
+        ipAuxiliaries.u_x = Utils.h().mul(ipAuxiliaries.o);
+        ipAuxiliaries.hPrimes = new Utils.G1Point[](32);
+        for (uint256 i = 0; i < 32; i++) {
+            ipAuxiliaries.hPrimes[i] = ip.hs(i).mul(burnAuxiliaries.ys[i].inv());
+            ipAuxiliaries.hPrimeSum = ipAuxiliaries.hPrimeSum.add(ipAuxiliaries.hPrimes[i].mul(burnAuxiliaries.ys[i].mul(burnAuxiliaries.z).add(burnAuxiliaries.twoTimesZSquared[i])));
         }
+        ipAuxiliaries.P = proof.BA.add(proof.BS.mul(burnAuxiliaries.x)).add(gSum().mul(burnAuxiliaries.z.neg())).add(ipAuxiliaries.hPrimeSum);
+        ipAuxiliaries.P = ipAuxiliaries.P.add(Utils.h().mul(proof.mu.neg()));
+        ipAuxiliaries.P = ipAuxiliaries.P.add(ipAuxiliaries.u_x.mul(proof.tHat));
+        require(ip.verifyInnerProduct(ipAuxiliaries.hPrimes, ipAuxiliaries.u_x, ipAuxiliaries.P, proof.ipProof, ipAuxiliaries.o), "Inner product proof verification failed.");
 
-        uint256[m] memory otherExponents;
-        otherExponents[0] = 1;
-        for (uint256 i = 0; i < n; i++) {
-            otherExponents[0] = otherExponents[0].mul(challenges[i]);
-        }
-        bool[m] memory bitSet;
-        otherExponents[0] = otherExponents[0].inv();
-        for (uint256 i = 0; i < m/2; ++i) {
-            for (uint256 j = 0; (1 << j) + i < m; ++j) {
-                uint256 i1 = i + (1 << j);
-                if (!bitSet[i1]) {
-                    uint256 temp = challenges[n - 1 - j].mul(challenges[n - 1 - j]);
-                    otherExponents[i1] = otherExponents[i].mul(temp);
-                    bitSet[i1] = true;
-                }
-            }
-        }
-
-        G1Point memory gTemp = multiExpGs(otherExponents);
-        G1Point memory hTemp = multiExpHsInversed(otherExponents, hPrimes);
-        G1Point memory cProof = add(add(mul(gTemp, ipProof.a), mul(hTemp, ipProof.b)), mul(u, ipProof.a.mul(ipProof.b)));
-        require(eq(P, cProof), "Inner product equality check failure.");
         return true;
     }
 
-    function multiExpGs(uint256[m] memory ss) internal view returns (G1Point memory result) {
-        for (uint256 i = 0; i < m; i++) {
-            result = add(result, mul(gs[i], ss[i]));
-        }
-    }
-
-    function multiExpHsInversed(uint256[m] memory ss, G1Point[m] memory hs) internal view returns (G1Point memory result) {
-        for (uint256 i = 0; i < m; i++) {
-            result = add(result, mul(hs[i], ss[m - 1 - i]));
-        }
-    }
-
-    // begin util functions
     function unserialize(bytes memory arr) internal pure returns (BurnProof memory proof) {
-        proof.A = G1Point(slice(arr, 0), slice(arr, 32));
-        proof.S = G1Point(slice(arr, 64), slice(arr, 96));
-        proof.XL = G1Point(slice(arr, 128), slice(arr, 160));
-        proof.XR = G1Point(slice(arr, 192), slice(arr, 224));
-        proof.commits = [G1Point(slice(arr, 256), slice(arr, 288)), G1Point(slice(arr, 320), slice(arr, 352))];
-        proof.t = slice(arr, 384);
-        proof.tauX = slice(arr, 416);
-        proof.mu = slice(arr, 448);
+        proof.BA = Utils.G1Point(Utils.slice(arr, 0), Utils.slice(arr, 32));
+        proof.BS = Utils.G1Point(Utils.slice(arr, 64), Utils.slice(arr, 96));
 
-        SigmaProof memory sigmaProof;
-        sigmaProof.c = slice(arr, 480);
-        sigmaProof.sX = slice(arr, 512);
-        proof.sigmaProof = sigmaProof;
+        proof.T_1 = Utils.G1Point(Utils.slice(arr, 128), Utils.slice(arr, 160));
+        proof.T_2 = Utils.G1Point(Utils.slice(arr, 192), Utils.slice(arr, 224));
+        proof.tHat = uint256(Utils.slice(arr, 256));
+        proof.mu = uint256(Utils.slice(arr, 288));
 
-        InnerProductProof memory ipProof;
-        for (uint256 i = 0; i < n; i++) {
-            ipProof.ls[i] = G1Point(slice(arr, 544 + i * 64), slice(arr, 576 + i * 64));
-            ipProof.rs[i] = G1Point(slice(arr, 544 + (n + i) * 64), slice(arr, 576 + (n + i) * 64));
+        proof.c = uint256(Utils.slice(arr, 320));
+        proof.s_sk = uint256(Utils.slice(arr, 352));
+        proof.s_b = uint256(Utils.slice(arr, 384));
+        proof.s_tau = uint256(Utils.slice(arr, 416));
+
+        InnerProductVerifier.InnerProductProof memory ipProof;
+        ipProof.L = new Utils.G1Point[](5);
+        ipProof.R = new Utils.G1Point[](5);
+        for (uint256 i = 0; i < 5; i++) { // 2^5 = 32.
+            ipProof.L[i] = Utils.G1Point(Utils.slice(arr, 448 + i * 64), Utils.slice(arr, 480 + i * 64));
+            ipProof.R[i] = Utils.G1Point(Utils.slice(arr, 448 + (5 + i) * 64), Utils.slice(arr, 480 + (5 + i) * 64));
         }
-        ipProof.a = slice(arr, 544 + n * 128);
-        ipProof.b = slice(arr, 576 + n * 128);
+        ipProof.a = uint256(Utils.slice(arr, 448 + 5 * 128));
+        ipProof.b = uint256(Utils.slice(arr, 480 + 5 * 128));
         proof.ipProof = ipProof;
+
         return proof;
-    }
-
-    function addVectors(uint256[m] memory a, uint256[m] memory b) internal pure returns (uint256[m] memory result) {
-        for (uint256 i = 0; i < m; i++) {
-            result[i] = a[i].add(b[i]);
-        }
-    }
-
-    function hadamardInv(G1Point[m] memory ps, uint256[m] memory ss) internal view returns (G1Point[m] memory result) {
-        for (uint256 i = 0; i < m; i++) {
-            result[i] = mul(ps[i], ss[i].inv());
-        }
-    }
-
-    function sumScalars(uint256[m] memory ys) internal pure returns (uint256 result) {
-        for (uint256 i = 0; i < m; i++) {
-            result = result.add(ys[i]);
-        }
-    }
-
-    function sumPoints(G1Point[m] memory ps) internal view returns (G1Point memory sum) {
-        for (uint256 i = 0; i < m; i++) {
-            sum = add(sum, ps[i]);
-        }
-    }
-
-    function commit(G1Point[m] memory ps, uint256[m] memory ss) internal view returns (G1Point memory result) {
-        for (uint256 i = 0; i < m; i++) {
-            result = add(result, mul(ps[i], ss[i]));
-        }
-    }
-
-    function powers(uint256 base) internal pure returns (uint256[m] memory powers) {
-        powers[0] = 1;
-        powers[1] = base;
-        for (uint256 i = 2; i < m; i++) {
-            powers[i] = powers[i - 1].mul(base);
-        }
-    }
-
-    function times(uint256[m] memory v, uint256 x) internal pure returns (uint256[m] memory result) {
-        for (uint256 i = 0; i < m; i++) {
-            result[i] = v[i].mul(x);
-        }
-    }
-
-    function slice(bytes memory input, uint256 start) internal pure returns (uint256 result) { // extracts exactly 32 bytes
-        assembly {
-            let m := mload(0x40)
-            mstore(m, mload(add(add(input, 0x20), start))) // why only 0x20?
-            result := mload(m)
-        }
-    }
-
-    struct G1Point {
-        uint256 x;
-        uint256 y;
-    }
-
-    function add(G1Point memory p1, G1Point memory p2) public view returns (G1Point memory r) {
-        assembly {
-            let m := mload(0x40)
-            mstore(m, mload(p1))
-            mstore(add(m, 0x20), mload(add(p1, 0x20)))
-            mstore(add(m, 0x40), mload(p2))
-            mstore(add(m, 0x60), mload(add(p2, 0x20)))
-            if iszero(staticcall(gas, 0x06, m, 0x80, r, 0x40)) {
-                revert(0, 0)
-            }
-        }
-    }
-
-    function mul(G1Point memory p, uint256 s) internal view returns (G1Point memory r) {
-        assembly {
-            let m := mload(0x40)
-            mstore(m, mload(p))
-            mstore(add(m, 0x20), mload(add(p, 0x20)))
-            mstore(add(m, 0x40), s)
-            if iszero(staticcall(gas, 0x07, m, 0x60, r, 0x40)) {
-                revert(0, 0)
-            }
-        }
-    }
-
-    function neg(G1Point memory p) internal pure returns (G1Point memory) {
-        return G1Point(p.x, FIELD_ORDER - (p.y % FIELD_ORDER)); // p.y should already be reduced mod P?
-    }
-
-    function eq(G1Point memory p1, G1Point memory p2) internal pure returns (bool) {
-        return p1.x == p2.x && p1.y == p2.y;
-    }
-
-    function fieldExp(uint256 base, uint256 exponent) internal view returns (uint256 output) { // warning: mod p, not q
-        uint256 order = FIELD_ORDER;
-        assembly {
-            let m := mload(0x40)
-            mstore(m, 0x20)
-            mstore(add(m, 0x20), 0x20)
-            mstore(add(m, 0x40), 0x20)
-            mstore(add(m, 0x60), base)
-            mstore(add(m, 0x80), exponent)
-            mstore(add(m, 0xa0), order)
-            if iszero(staticcall(gas, 0x05, m, 0xc0, m, 0x20)) { // staticcall or call?
-                revert(0, 0)
-            }
-            output := mload(m)
-        }
-    }
-
-    function mapInto(uint256 seed) internal view returns (G1Point memory) { // warning: function totally untested!
-        uint256 y;
-        while (true) {
-            uint256 ySquared = fieldExp(seed, 3) + 3; // addmod instead of add: waste of gas, plus function overhead cost
-            y = fieldExp(ySquared, (FIELD_ORDER + 1) / 4);
-            if (fieldExp(y, 2) == ySquared) {
-                break;
-            }
-            seed += 1;
-        }
-        return G1Point(seed, y);
-    }
-
-    function mapInto(string memory input) internal view returns (G1Point memory) { // warning: function totally untested!
-        return mapInto(uint256(keccak256(abi.encodePacked(input))) % FIELD_ORDER);
-    }
-
-    function mapInto(string memory input, uint256 i) internal view returns (G1Point memory) { // warning: function totally untested!
-        return mapInto(uint256(keccak256(abi.encodePacked(input, i))) % FIELD_ORDER);
-        // ^^^ important: i haven't tested this, i.e. whether it agrees with ProofUtils.paddedHash(input, i) (cf. also the go version)
     }
 }
