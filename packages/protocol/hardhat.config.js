@@ -16,6 +16,7 @@ const config = {
       chainId: 1337,
       hardfork: 'berlin',
       minGasPrice: 0,
+      initialDate: new Date().toString(),
     },
     localTest: {
       url: 'http://127.0.0.1:8545/',
