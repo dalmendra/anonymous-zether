@@ -3,11 +3,17 @@
   "version": "0.1.0",
   "description": "",
   "main": "./lib",
+  "scripts": {
+    "deploy:local": "npx hardhat run scripts/deploy.js --network localTest",
+    "deploy:besu": "npx hardhat run scripts/deploy.js --network besu",
+    "node": "npx hardhat node",
+    "test": "npx hardhat test"
+  },
   "devDependencies": {
     "@ethersproject/abi": "^5.7.0",
     "@ethersproject/providers": "^5.7.2",
     "@nomicfoundation/hardhat-chai-matchers": "^1.0.6",
-    "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.9",
     "@nomicfoundation/hardhat-toolbox": "^2.0.0",
     "@nomiclabs/hardhat-ethers": "^2.2.0",
     "@nomiclabs/hardhat-etherscan": "^3.1.1",

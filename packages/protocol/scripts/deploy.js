@@ -1,5 +1,3 @@
-'use strict';
-
 const { ethers } = require('hardhat');
 
 const EPOCH_LENGTH = process.env.EPOCH_LENGTH || 6;
