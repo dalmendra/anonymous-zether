@@ -1,5 +1,7 @@
 # Anonymous Zether Smart Contracts
 
+Unit tests have been re-written in Hardhat. The tests do not utilize the client code in `anonymous.js/src/client.js`, as that's dependent on truffle. They do make use of the low-level libraries in `anonymous.js/src/utils` and `anonymous.js/src/prover`, such that code in those libraries are covered by the tests.
+
 ## Run The Unit Tests
 
 ```console
