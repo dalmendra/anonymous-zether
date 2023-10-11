@@ -4,6 +4,7 @@ pragma experimental ABIEncoderV2;
 
 import "./Utils.sol";
 import "./InnerProductVerifier.sol";
+import "hardhat/console.sol";
 
 contract ZetherVerifier {
     using Utils for uint256;
@@ -71,6 +72,8 @@ contract ZetherVerifier {
         statement.epoch = epoch;
         statement.u = u;
         ZetherProof memory zetherProof = unserialize(proof);
+        console.log("Statement epoch");
+        console.logBytes32(bytes32(epoch));
         return verify(statement, zetherProof);
     }
 

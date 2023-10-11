@@ -4,6 +4,7 @@ pragma experimental ABIEncoderV2;
 
 import "./Utils.sol";
 import "./InnerProductVerifier.sol";
+import "hardhat/console.sol";
 
 contract BurnVerifier {
     using Utils for uint256;
@@ -52,6 +53,8 @@ contract BurnVerifier {
         statement.u = u;
         statement.sender = sender;
         BurnProof memory burnProof = unserialize(proof);
+        console.log("Statement epoch (use by the verifier)");
+        console.logBytes32(bytes32(epoch));
         return verify(statement, burnProof);
     }
 
