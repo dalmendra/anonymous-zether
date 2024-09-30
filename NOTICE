@@ -1,0 +1,16 @@
+This project was originally developed in 2020 by JP Morgan Chase Company and it was modified by Kaleido in 2023 and then by Daniel Almendra in 2024.
+
+The main feature implemented in this fork is the possibility to execute DvP Transactions to exchange an ERC-20 for an ERC-1155 token (or vice-versa).
+
+Key modifications:
+- New contracts:
+	- DvpZSC.sol: this contract was adapted from the one available in https://github.com/bacen/pilotord-kit-onboarding/ used in Real Digital project from the Central Bank of Brazil. It enables the DvP transaction using ERC-20 and ERC-1155 tokens.
+	- Erc1155Token.sol: this contract implements the ERC-1155 token, which was not available in the original implementation.
+	- ZSCERC1155Restricted.sol: this contract was adapted from the one available in https://github.com/bacen/pilotord-kit-onboarding/ used in Real Digital project from the Central Bank of Brazil. It corresponds to the original ZSC.sol contract, but now used to represent the private Zether token for the ERC-1155 token.
+- Modified contracts:
+	- Cashtoken.sol: a mapping for authorizedAccounts was added, new functions to authorize and revoke accounts, new verifyAccount function for account status checks. Minting is now restricted to authorized accounts only.
+	- ZSCRestricted.sol: this contract was adapted from the one available in https://github.com/bacen/pilotord-kit-onboarding/ used in Real Digital project from the Central Bank of Brazil. It corresponds to the original ZSC.sol representing the private Zether token for the ERC-20 token (CashToken) contract with slight modifications, mainly improvements in the register and transfer functions.
+- New deploy script:
+	- deploy.js was modified to deploy the new contracts, supporting hardhat and additional logging.
+
+There were also many modifications performed in the anonymous-zether-client application. Please refer to https://github.com/dalmendra/anonymous-zether-client for more information. 

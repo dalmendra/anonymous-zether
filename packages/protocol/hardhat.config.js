@@ -1,10 +1,13 @@
 require('hardhat/config');
 require('@nomicfoundation/hardhat-toolbox');
 require('solidity-docgen');
+//require('hardhat-gas-reporter');
+
+const loggingMiddleware = require('./loggingMiddleware');
 
 const config = {
   solidity: {
-    version: '0.8.19',
+    version: '0.8.24',
     settings: {
       optimizer: {
         enabled: true,
@@ -14,8 +17,8 @@ const config = {
   networks: {
     hardhat: {
       chainId: 1337,
-      hardfork: 'berlin',
-      minGasPrice: 0,
+      hardfork: 'berlin', // berlin is needed to support minGasPrice = 0
+      minGasPrice: 0,  //this is needed to not having to own ETH in admin and user accounts (see base.js)
       initialDate: new Date().toString(),
     },
     localTest: {
@@ -32,6 +35,11 @@ const config = {
     },
   },
   docgen: { pages: 'files' },
+  /*gasReporter: {
+	  enabled: true,
+	  outputFile: "gas-report.txt",
+	  noColors: true,
+  }*/
 };
 
 module.exports = config;

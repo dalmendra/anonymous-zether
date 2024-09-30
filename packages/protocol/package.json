@@ -20,11 +20,14 @@
     "@openzeppelin/contracts": "^4.8.0",
     "chai": "^4.3.6",
     "ethers": "^5.7.2",
-    "hardhat": "^2.12.0",
-    "hardhat-gas-reporter": "^1.0.9",
+    "hardhat": "^2.22.4",
+    "hardhat-gas-reporter": "^1.0.10",
     "solidity-coverage": "^0.8.2"
   },
   "dependencies": {
-    "solidity-docgen": "^0.6.0-beta.35"
+    "solidity-docgen": "^0.6.0-beta.35",
+    "truffle": "^5.11.5",
+    "web3": "^4.8.0",
+    "web3-eth-abi": "^4.2.1"
   }
 }

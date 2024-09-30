@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache License 2.0
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.24;
 pragma experimental ABIEncoderV2;
 
 import "./Utils.sol";
 import "./InnerProductVerifier.sol";
-import "hardhat/console.sol";
 
 contract ZetherVerifier {
     using Utils for uint256;
@@ -15,6 +14,15 @@ contract ZetherVerifier {
 
     InnerProductVerifier ip;
     uint256 public constant fee = 0; // set this to be the "transaction fee". can be any integer under MAX.
+
+    struct Transaction {
+        Utils.G1Point[] C;
+        Utils.G1Point D;
+        Utils.G1Point[] y;
+        Utils.G1Point u;
+        bytes proof;
+        Utils.G1Point beneficiary;
+    }
 
     struct ZetherStatement {
         Utils.G1Point[] CLn;
@@ -62,7 +70,7 @@ contract ZetherVerifier {
         ip = InnerProductVerifier(_ip);
     }
 
-    function verifyTransfer(Utils.G1Point[] memory CLn, Utils.G1Point[] memory CRn, Utils.G1Point[] memory C, Utils.G1Point memory D, Utils.G1Point[] memory y, uint256 epoch, Utils.G1Point memory u, bytes memory proof) public view returns (bool) {
+    function verifyTransfer(Utils.G1Point[] memory CLn, Utils.G1Point[] memory CRn, Utils.G1Point[] memory C,Utils.G1Point memory D,Utils.G1Point[] memory y, uint256 epoch,Utils.G1Point memory u, bytes memory proof) public view returns (bool) {
         ZetherStatement memory statement;
         statement.CLn = CLn; // do i need to allocate / set size?!
         statement.CRn = CRn;
@@ -72,8 +80,19 @@ contract ZetherVerifier {
         statement.epoch = epoch;
         statement.u = u;
         ZetherProof memory zetherProof = unserialize(proof);
-        console.log("Statement epoch");
-        console.logBytes32(bytes32(epoch));
+        return verify(statement, zetherProof);
+    }
+
+    function verifyTransfer(Utils.G1Point[] memory CLn, Utils.G1Point[] memory CRn, uint256 epoch, Transaction memory transaction) public view returns (bool) {
+        ZetherStatement memory statement;
+        statement.CLn = CLn; // do i need to allocate / set size?!
+        statement.CRn = CRn;
+        statement.C = transaction.C;
+        statement.D = transaction.D;
+        statement.y = transaction.y;
+        statement.epoch = epoch;
+        statement.u = transaction.u;
+        ZetherProof memory zetherProof = unserialize(transaction.proof);
         return verify(statement, zetherProof);
     }
 
