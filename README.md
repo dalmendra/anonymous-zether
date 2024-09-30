@@ -92,5 +92,7 @@ ZSCERC1155Restricted deployed to  0x0165878A594ca255338adfa4d48449f69242Eb8F
 DvpZSC deployed to  0xa513E6E4b8f2a923D98304ec87F64353C4D5C853
 ```
 
+> Note: to allow enough time for the DvP transactions to be executed, the epoch length may need to be increased. To perform that change, edit the script `packages/protocol/scripts/deploy.js` and change the line `const EPOCH_LENGTH = process.env.EPOCH_LENGTH || 6;` to 60 seconds or more, up to 240 seconds. The epoch must also be changed accordingly in the `.env` file (`ZSC_EPOCH_LENGTH` parameter) in [anonymous-zether-client](https://github.com/dalmendra/anonymous-zether-client).
+
 ### Detailed usage an interaction:
 Please refer to [anonymous-zether-client](https://github.com/dalmendra/anonymous-zether-client) to see all transactions that can be performed using that client front-end, including the DvP transaction.
